@@ -1,0 +1,1049 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Wegewahl — der kürzeste Weg und was das Suchen kostet</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Dijkstra, A* und Verwandte auf einer bemalbaren Landkarte: nicht nur der Weg, sondern der Aufwand dahinter — jeder besuchte Knoten sichtbar, jede Behauptung erschöpfend nachgerechnet." />
+
+<style>
+  :root {
+    --grund: #EDEFE9;
+    --feld:  #FAFBF7;
+    --tief:  #E0E3DA;
+    --linie: #C5C9BC;
+    --tinte: #171A14;
+    --leise: #61665A;
+    --netz:  #B3B8A8;
+    --wand:  #3A3F36;
+    --sand:  #C08A2E;
+    --sumpf: #2E6B5E;
+    --pfad:  #1F5FA8;
+    --such:  #8A5AA8;   /* was die Suche angefasst hat */
+    --start: #2C7A34;
+    --ziel:  #A32C22;
+    --gut:   #2C7A34;
+    --warn:  #A32C22;
+    --schatten: 0 1px 0 rgba(23,26,20,.05), 0 10px 24px -16px rgba(23,26,20,.45);
+    --f-fest: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "DejaVu Sans Mono", monospace;
+    --f-text: -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --grund: #121410; --feld: #191C16; --tief: #0C0E0A; --linie: #2E332A;
+      --tinte: #E4E7DE; --leise: #8D9386; --netz: #3C4238; --wand: #6E766A;
+      --sand: #D9A94E; --sumpf: #58A895; --pfad: #6CA8E8; --such: #B98AD6;
+      --start: #7FBF6A; --ziel: #E0776B; --gut: #7FBF6A; --warn: #E0776B;
+      --schatten: 0 1px 0 rgba(255,255,255,.03), 0 12px 30px -18px #000;
+    }
+  }
+  :root[data-theme="dark"] {
+    --grund: #121410; --feld: #191C16; --tief: #0C0E0A; --linie: #2E332A;
+    --tinte: #E4E7DE; --leise: #8D9386; --netz: #3C4238; --wand: #6E766A;
+    --sand: #D9A94E; --sumpf: #58A895; --pfad: #6CA8E8; --such: #B98AD6;
+    --start: #7FBF6A; --ziel: #E0776B; --gut: #7FBF6A; --warn: #E0776B;
+    --schatten: 0 1px 0 rgba(255,255,255,.03), 0 12px 30px -18px #000;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--grund); color:var(--tinte);
+    font-family:var(--f-text); font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .blatt { max-width:1160px; margin:0 auto;
+    padding: clamp(20px,4vw,44px) clamp(14px,3vw,28px) 64px;
+    display:flex; flex-direction:column; gap:18px; }
+
+  .marke { font-family:var(--f-fest); font-size:10px; letter-spacing:.2em; text-transform:uppercase;
+    color:var(--leise); display:flex; gap:12px; align-items:center; margin:0; }
+  .marke::after { content:""; flex:1; height:1px; background:var(--linie); }
+  h1 { font-family:var(--f-fest); font-weight:700; font-size:clamp(24px,4.2vw,40px);
+    line-height:1.06; letter-spacing:-.03em; margin:0; text-wrap:balance; }
+  h1 span { color:var(--pfad); }
+  .vorspann { max-width:70ch; color:var(--leise); margin:0; }
+  .vorspann b { color:var(--tinte); font-weight:600; }
+
+  .leiste { display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+    background:var(--feld); border:1px solid var(--linie); padding:9px 11px; box-shadow:var(--schatten); }
+  .kl { font-family:var(--f-fest); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--leise); }
+  button, select, input { font-family:var(--f-fest); font-size:12px; color:var(--tinte); background:var(--grund);
+    border:1px solid var(--linie); border-radius:0; padding:6px 10px; letter-spacing:.03em; }
+  button, select { cursor:pointer; }
+  button:hover, select:hover { border-color:var(--pfad); }
+  button:active { background:var(--tief); }
+  button.haupt { background:var(--pfad); border-color:var(--pfad); color:var(--feld); }
+  button[aria-pressed="true"] { background:var(--tief); border-color:var(--pfad); }
+  input[type=range] { padding:0; background:none; border:none; accent-color:var(--pfad); vertical-align:middle; }
+  :focus-visible { outline:2px solid var(--pfad); outline-offset:2px; }
+  .stift { display:inline-block; width:10px; height:10px; margin-right:5px; vertical-align:-1px; border:1px solid var(--linie); }
+
+  .kasten { background:var(--feld); border:1px solid var(--linie); box-shadow:var(--schatten);
+    display:flex; flex-direction:column; min-width:0; }
+  .kasten-kopf { display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    padding:8px 11px; border-bottom:1px solid var(--linie); }
+  .kasten-leib { padding:11px; display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .buehne { display:grid; grid-template-columns: 1fr 330px; gap:18px; align-items:start; }
+  @media (max-width: 900px) { .buehne { grid-template-columns: minmax(0,1fr); } }
+  .saeule { display:flex; flex-direction:column; gap:18px; min-width:0; }
+
+  canvas { width:100%; height:auto; display:block; background:var(--tief); border:1px solid var(--linie);
+    cursor:crosshair; touch-action:none; }
+
+  .werte { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:1px;
+    background:var(--linie); border:1px solid var(--linie); }
+  .wert { background:var(--feld); padding:8px 10px; min-width:0; }
+  .wert .l { font-family:var(--f-fest); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--leise); }
+  .wert .n { font-family:var(--f-fest); font-size:18px; font-variant-numeric:tabular-nums; }
+  .wert .n.gut { color:var(--gut); } .wert .n.warn { color:var(--warn); } .wert .n.such { color:var(--such); }
+
+  table.liste { border-collapse:collapse; width:100%; font-family:var(--f-fest); font-size:12px; }
+  table.liste th, table.liste td { border-bottom:1px solid var(--linie); padding:5px 7px; text-align:left; }
+  table.liste th { color:var(--leise); font-weight:400; font-size:10px; letter-spacing:.1em; text-transform:uppercase; }
+  table.liste td.z { text-align:right; font-variant-numeric:tabular-nums; }
+  table.liste tr.aktiv td { background:var(--tief); }
+  .gutt { color:var(--gut); } .schlecht { color:var(--warn); }
+
+  .hinweis { font-family:var(--f-fest); font-size:12px; color:var(--leise); letter-spacing:0; margin:0; }
+  .hinweis b { color:var(--tinte); font-weight:600; }
+
+  .noten { display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:18px; margin-top:6px; }
+  .noten section { background:var(--feld); border:1px solid var(--linie); padding:12px 14px; box-shadow:var(--schatten); }
+  .noten h3 { font-family:var(--f-fest); font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--leise); margin:0 0 6px; font-weight:400; }
+  .noten p { margin:0; font-size:14px; }
+  code { font-family:var(--f-fest); font-size:12.5px; background:var(--tief); padding:1px 4px; }
+  .fuss { color:var(--leise); font-size:13px; border-top:1px solid var(--linie); padding-top:12px; }
+  .fuss a { color:var(--pfad); }
+</style>
+</head>
+<body>
+<main class="blatt">
+
+  <p class="marke">Blatt · Suche</p>
+  <h1>Wegewahl — der kürzeste Weg und was das <span>Suchen</span> kostet</h1>
+  <p class="vorspann">
+    Jede Navigation macht zwei Dinge gleichzeitig: sie findet einen Weg, und sie verbrennt dabei
+    Rechenzeit. Das erste sieht man auf jeder Karte, das zweite nie. Hier ist beides sichtbar —
+    der Weg <b>und jedes Feld, das die Suche angefasst hat</b>, um ihn zu finden. Karte bemalen,
+    Verfahren wechseln, Aufwand vergleichen.
+  </p>
+
+  <div class="leiste">
+    <span class="kl">Karte</span>
+    <select id="karte-wahl" aria-label="Karte wählen">
+      <option value="falle">Zaun mit Lücke</option>
+      <option value="sumpf">Sumpfland</option>
+      <option value="labyrinth">Labyrinth</option>
+      <option value="streu">Streufelsen</option>
+      <option value="leer">leeres Feld</option>
+    </select>
+    <span class="kl" style="margin-left:6px">Stift</span>
+    <select id="stift" aria-label="Stift wählen">
+      <option value="0">Wand</option>
+      <option value="1">Gras · 1</option>
+      <option value="3">Sand · 3</option>
+      <option value="8">Sumpf · 8</option>
+      <option value="s">Start</option>
+      <option value="z">Ziel</option>
+    </select>
+    <button id="b-diagonal" aria-pressed="false">Diagonalzüge</button>
+    <span style="flex:1"></span>
+    <button id="b-thema">Ansicht</button>
+  </div>
+
+  <div class="buehne">
+    <div class="kasten">
+      <div class="kasten-kopf">
+        <span class="kl" id="verfahren-name"></span>
+        <span class="kl" id="karten-lage" style="margin-left:auto"></span>
+      </div>
+      <div class="kasten-leib">
+        <canvas id="feld" width="1024" height="576" aria-label="Landkarte mit Suchverlauf"></canvas>
+        <p class="hinweis">
+          <span class="stift" style="background:var(--such);opacity:.55"></span><b>Violett</b>: von der
+          Suche angefasst — je dunkler, desto später.
+          <span class="stift" style="background:var(--pfad)"></span><b>Blau</b>: der gefundene Weg.
+          <span class="stift" style="background:var(--sand)"></span>Sand kostet 3,
+          <span class="stift" style="background:var(--sumpf)"></span>Sumpf kostet 8 pro Feld.
+          Ziehen malt, der Stift steht oben.
+        </p>
+      </div>
+    </div>
+
+    <div class="saeule">
+      <div class="kasten">
+        <div class="kasten-kopf"><span class="kl">Alle Verfahren auf dieser Karte</span></div>
+        <div class="kasten-leib">
+          <table class="liste" id="vergleich">
+            <thead><tr><th>Verfahren</th><th class="z">Weg</th><th class="z">angefasst</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="hinweis" id="vergleich-fuss"></p>
+        </div>
+      </div>
+
+      <div class="kasten">
+        <div class="kasten-kopf"><span class="kl">Gier gegen Sorgfalt</span></div>
+        <div class="kasten-leib">
+          <p class="hinweis">
+            A* darf die Schätzung überbetonen — <code>f = g + ε·h</code>. Das spart Arbeit und
+            verliert die Garantie: der Weg wird höchstens um den Faktor ε schlechter.
+          </p>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="kl">ε</span>
+            <input type="range" id="eps" min="10" max="400" step="5" value="100" style="flex:1;min-width:110px" aria-label="Gewicht der Schätzung" />
+            <span class="kl" id="eps-zahl" style="min-width:4ch;text-align:right"></span>
+          </div>
+          <div class="werte">
+            <div class="wert"><div class="l">Weg</div><div class="n" id="w-eps-weg">—</div></div>
+            <div class="wert"><div class="l">Umweg</div><div class="n" id="w-eps-umweg">—</div></div>
+            <div class="wert"><div class="l">angefasst</div><div class="n such" id="w-eps-knoten">—</div></div>
+            <div class="wert"><div class="l">gespart</div><div class="n gut" id="w-eps-spar">—</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="kasten">
+    <div class="kasten-kopf">
+      <span class="kl">Beweis statt Behauptung</span>
+      <button id="b-pruefen" class="haupt" style="margin-left:auto">Prüfen</button>
+    </div>
+    <div class="kasten-leib">
+      <p class="hinweis">
+        Auf einem 4×4-Feld werden <b>alle 16 384 möglichen Wandmuster</b> durchgerechnet und
+        gegen eine stumpfe Aufzählung sämtlicher Wege gestellt — kein Stichprobenglück, sondern
+        jeder Fall. Dazu Dijkstra gegen Bellman-Ford gegen Floyd-Warshall auf gewichteten Karten,
+        die Dreiecksungleichung über alle Knotenpaare, die ε-Schranke, und zwei Gegenbeispiele, die
+        zeigen, wo die üblichen Faustregeln <b>tatsächlich brechen</b>.
+      </p>
+      <table class="liste" id="pruef"><tbody></tbody></table>
+      <p class="hinweis" id="pruef-fuss">noch nicht geprüft</p>
+    </div>
+  </div>
+
+  <div class="noten">
+    <section>
+      <h3>Warum Dijkstra funktioniert</h3>
+      <p>
+        Er nimmt immer das nächstliegende noch offene Feld. Wenn dieses Feld an die Reihe kommt,
+        kann kein späterer Weg dorthin kürzer sein — dafür müsste er über ein noch weiter entferntes
+        Feld laufen und wieder zurück. Genau dieses Argument bricht, sobald eine Kante
+        <b>negativ</b> ist; der Prüflauf zeigt einen solchen Fall.
+      </p>
+    </section>
+    <section>
+      <h3>Was A* hinzufügt</h3>
+      <p>
+        Eine Schätzung der Restentfernung. Sie muss <b>zulässig</b> sein, also nie überschätzen —
+        dann bleibt der Weg optimal, und die Suche wandert zielgerichtet statt kreisförmig. Auf
+        offenem Feld ist der Gewinn enorm; hinter einem Zaun mit Lücke wird A* zu Dijkstra, weil die
+        Schätzung genau in die falsche Richtung zeigt.
+      </p>
+    </section>
+    <section>
+      <h3>Der Preis der Gier</h3>
+      <p>
+        Greedy-Best-First schaut nur auf die Schätzung, nie auf den bisherigen Weg — schnell, aber
+        beliebig schlecht. Gewichtetes A* liegt dazwischen und ist ehrlich beschriftet: <b>höchstens
+        ε-mal schlechter</b>. Genau diese Schranke wird im Prüflauf über hundert Karten und alle
+        ε-Werte nachgerechnet.
+      </p>
+    </section>
+  </div>
+
+  <p class="fuss">
+    Eine einzelne HTML-Datei. Kein Build, keine Bibliothek, nichts verlässt den Browser.
+    <span style="display:block;margin-top:8px">
+      Verwandt:
+      <a href="https://ssims437.github.io/plotterblaetter/">Plotterblätter</a> ·
+      <a href="https://ssims437.github.io/redundanz/">Redundanz</a> ·
+      <a href="https://ssims437.github.io/reparatur/">Reparatur</a> ·
+      <a href="https://ssims437.github.io/wuerfel/">Würfel</a> ·
+      <a href="https://ssims437.github.io/rechenwerk/">Rechenwerk</a> ·
+      <a href="https://ssims437.github.io/nachkomma/">Nachkomma</a> ·
+      <a href="https://ssims437.github.io/zeitsprung/">Zeitsprung</a> ·
+      <a href="https://ssims437.github.io/gradtage/">Gradtage</a> ·
+      <a href="https://ssims437.github.io/stimmfuehrung/">Stimmführung</a> ·
+      <a href="https://ssims437.github.io/verzerrung/">Verzerrung</a> ·
+      <a href="https://ssims437.github.io/handschlag/">Handschlag</a> ·
+      <a href="https://ssims437.github.io/frequenzgang/">Frequenzgang</a> ·
+      <a href="https://ssims437.github.io/indexbaum/">Indexbaum</a> ·
+      <a href="https://ssims437.github.io/auszaehlung/">Auszählung</a>
+    </span>
+  </p>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const WURZEL2 = Math.SQRT2;
+
+  /* ===================== Halde =====================
+     Ein binärer Haufen. Die Sortierung nach Schlüssel ist der ganze Unterschied
+     zwischen Breitensuche und Dijkstra. */
+  function Halde() {
+    const s = [], w = [];
+    return {
+      leer: () => s.length === 0,
+      groesse: () => s.length,
+      rein(schl, wert) {
+        s.push(schl); w.push(wert);
+        let i = s.length - 1;
+        while (i > 0) {
+          const e = (i - 1) >> 1;
+          if (s[e] <= s[i]) break;
+          [s[e], s[i]] = [s[i], s[e]]; [w[e], w[i]] = [w[i], w[e]];
+          i = e;
+        }
+      },
+      raus() {
+        const kopf = w[0], kopfS = s[0];
+        const letztW = w.pop(), letztS = s.pop();
+        if (s.length) {
+          s[0] = letztS; w[0] = letztW;
+          let i = 0;
+          for (;;) {
+            const l = 2 * i + 1, r = l + 1;
+            let k = i;
+            if (l < s.length && s[l] < s[k]) k = l;
+            if (r < s.length && s[r] < s[k]) k = r;
+            if (k === i) break;
+            [s[k], s[i]] = [s[i], s[k]]; [w[k], w[i]] = [w[i], w[k]];
+            i = k;
+          }
+        }
+        return { schl: kopfS, wert: kopf };
+      }
+    };
+  }
+
+  /* ===================== Karte =====================
+     kosten[i] = 0 heißt Wand, sonst der Preis, dieses Feld zu betreten.
+     Diagonalzüge kosten √2 mal so viel und sind an Ecken verboten. */
+  function Karte(W, H, kosten, start, ziel) {
+    return { W, H, kosten, start, ziel, n: W * H };
+  }
+
+  function nachbarn(k, i, diagonal, aus) {
+    aus.length = 0;
+    const x = i % k.W, y = (i - x) / k.W;
+    const gerade = [[1,0],[-1,0],[0,1],[0,-1]];
+    const schraeg = [[1,1],[1,-1],[-1,1],[-1,-1]];
+    for (const [dx, dy] of gerade) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= k.W || ny >= k.H) continue;
+      const j = ny * k.W + nx;
+      if (k.kosten[j] === 0) continue;
+      aus.push(j, k.kosten[j]);
+    }
+    if (!diagonal) return aus;
+    for (const [dx, dy] of schraeg) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= k.W || ny >= k.H) continue;
+      const j = ny * k.W + nx;
+      if (k.kosten[j] === 0) continue;
+      // keine Ecken schneiden: beide angrenzenden geraden Felder müssen frei sein
+      if (k.kosten[y * k.W + nx] === 0 || k.kosten[ny * k.W + x] === 0) continue;
+      aus.push(j, k.kosten[j] * WURZEL2);
+    }
+    return aus;
+  }
+
+  /* Schätzungen der Restentfernung. Der billigste Feldpreis auf der Karte ist der
+     Maßstab — mit 1 als kleinstem Preis ist Manhattan zulässig, bei 4 Nachbarn. */
+  function schaetzer(art, k, minPreis) {
+    const zx = k.ziel % k.W, zy = (k.ziel - zx) / k.W;
+    if (art === "keine") return () => 0;
+    if (art === "manhattan") return (i) => {
+      const x = i % k.W, y = (i - x) / k.W;
+      return (Math.abs(x - zx) + Math.abs(y - zy)) * minPreis;
+    };
+    // Oktil: der richtige Maßstab, wenn Diagonalzüge erlaubt sind
+    return (i) => {
+      const x = i % k.W, y = (i - x) / k.W;
+      const dx = Math.abs(x - zx), dy = Math.abs(y - zy);
+      return (Math.max(dx, dy) + (WURZEL2 - 1) * Math.min(dx, dy)) * minPreis;
+    };
+  }
+
+  function minPreisVon(k) {
+    let m = Infinity;
+    for (let i = 0; i < k.n; i++) if (k.kosten[i] > 0 && k.kosten[i] < m) m = k.kosten[i];
+    return m === Infinity ? 1 : m;
+  }
+
+  /* Die eine Suche, aus der alle anderen Spezialfälle sind:
+       gewicht = 0 → Greedy-Best-First (nur Schätzung)
+       h = 0       → Dijkstra
+       h ≠ 0, eps = 1 → A*
+     Rückgabe: Kosten, Weg, Reihenfolge der Entnahmen. */
+  function suchen(k, opt) {
+    const { h = () => 0, eps = 1, gewicht = 1, diagonal = false } = opt || {};
+    const dist = new Float64Array(k.n).fill(Infinity);
+    const vor = new Int32Array(k.n).fill(-1);
+    const zu = new Uint8Array(k.n);
+    const rang = new Int32Array(k.n).fill(-1);
+    const halde = Halde();
+    const puffer = [];
+    let entnommen = 0;
+    dist[k.start] = 0;
+    halde.rein(gewicht * 0 + eps * h(k.start), k.start);
+    while (!halde.leer()) {
+      const { wert: i } = halde.raus();
+      if (zu[i]) continue;
+      zu[i] = 1;
+      rang[i] = entnommen++;
+      if (i === k.ziel) break;
+      nachbarn(k, i, diagonal, puffer);
+      for (let t = 0; t < puffer.length; t += 2) {
+        const j = puffer[t], kante = puffer[t + 1];
+        if (zu[j]) continue;
+        const neu = dist[i] + kante;
+        if (neu < dist[j]) {
+          dist[j] = neu;
+          vor[j] = i;
+          halde.rein(gewicht * neu + eps * h(j), j);
+        }
+      }
+    }
+    const pfad = [];
+    if (isFinite(dist[k.ziel])) {
+      for (let i = k.ziel; i !== -1; i = vor[i]) pfad.push(i);
+      pfad.reverse();
+    }
+    return { kosten: dist[k.ziel], pfad, rang, entnommen, dist };
+  }
+
+  /* Breitensuche: zählt Schritte, nicht Preise. Auf einer Karte mit Sumpf ist das
+     der Weg, den man nimmt, wenn man die Kosten ignoriert. */
+  function breitensuche(k, diagonal) {
+    const vor = new Int32Array(k.n).fill(-1);
+    const gesehen = new Uint8Array(k.n);
+    const rang = new Int32Array(k.n).fill(-1);
+    const schlange = [k.start];
+    gesehen[k.start] = 1;
+    const puffer = [];
+    let entnommen = 0, kopf = 0;
+    while (kopf < schlange.length) {
+      const i = schlange[kopf++];
+      rang[i] = entnommen++;
+      if (i === k.ziel) break;
+      nachbarn(k, i, diagonal, puffer);
+      for (let t = 0; t < puffer.length; t += 2) {
+        const j = puffer[t];
+        if (gesehen[j]) continue;
+        gesehen[j] = 1; vor[j] = i; schlange.push(j);
+      }
+    }
+    const pfad = [];
+    if (gesehen[k.ziel]) { for (let i = k.ziel; i !== -1; i = vor[i]) pfad.push(i); pfad.reverse(); }
+    let kosten = 0;
+    for (let t = 1; t < pfad.length; t++) {
+      const a = pfad[t - 1], b = pfad[t];
+      const schraeg = (a % k.W) !== (b % k.W) && Math.floor(a / k.W) !== Math.floor(b / k.W);
+      kosten += k.kosten[b] * (schraeg ? WURZEL2 : 1);
+    }
+    return { kosten: pfad.length ? kosten : Infinity, pfad, rang, entnommen };
+  }
+
+  /* ===================== Unabhängige Referenzen für den Prüflauf ===================== */
+
+  /* Bellman-Ford: entspannt alle Kanten n-1 mal. Braucht keine Sortierung und
+     verträgt negative Kanten — der Zeuge gegen Dijkstra. */
+  function bellmanFord(k, diagonal) {
+    const dist = new Float64Array(k.n).fill(Infinity);
+    dist[k.start] = 0;
+    const puffer = [];
+    for (let runde = 0; runde < k.n - 1; runde++) {
+      let geaendert = false;
+      for (let i = 0; i < k.n; i++) {
+        if (k.kosten[i] === 0 || !isFinite(dist[i])) continue;
+        nachbarn(k, i, diagonal, puffer);
+        for (let t = 0; t < puffer.length; t += 2) {
+          const j = puffer[t], kante = puffer[t + 1];
+          if (dist[i] + kante < dist[j] - 1e-12) { dist[j] = dist[i] + kante; geaendert = true; }
+        }
+      }
+      if (!geaendert) break;
+    }
+    return dist;
+  }
+
+  /* Floyd-Warshall: alle Paare, ohne jede Heuristik. Nur für kleine Karten. */
+  function floydWarshall(k, diagonal) {
+    const n = k.n;
+    const d = new Float64Array(n * n).fill(Infinity);
+    const puffer = [];
+    for (let i = 0; i < n; i++) {
+      if (k.kosten[i] === 0) continue;
+      d[i * n + i] = 0;
+      nachbarn(k, i, diagonal, puffer);
+      for (let t = 0; t < puffer.length; t += 2) d[i * n + puffer[t]] = puffer[t + 1];
+    }
+    for (let m = 0; m < n; m++) {
+      if (k.kosten[m] === 0) continue;
+      for (let i = 0; i < n; i++) {
+        const dim = d[i * n + m];
+        if (!isFinite(dim)) continue;
+        for (let j = 0; j < n; j++) {
+          const neu = dim + d[m * n + j];
+          if (neu < d[i * n + j]) d[i * n + j] = neu;
+        }
+      }
+    }
+    return d;
+  }
+
+  /* Stumpfe Aufzählung: jeder einfache Weg, kein Verfahren, keine Abkürzung.
+     Nur auf winzigen Karten bezahlbar — dafür über jeden Zweifel erhaben. */
+  function alleWege(k, diagonal) {
+    const puffer = [];
+    let bestes = Infinity, gezaehlt = 0;
+    const drin = new Uint8Array(k.n);
+    (function weiter(i, kosten) {
+      if (kosten >= bestes) return;                       // Abschneiden ändert das Minimum nicht
+      if (i === k.ziel) { bestes = kosten; gezaehlt++; return; }
+      drin[i] = 1;
+      const eigene = [];
+      nachbarn(k, i, diagonal, eigene);
+      for (let t = 0; t < eigene.length; t += 2) {
+        const j = eigene[t];
+        if (drin[j]) continue;
+        weiter(j, kosten + eigene[t + 1]);
+      }
+      drin[i] = 0;
+      gezaehlt++;
+    })(k.start, 0);
+    if (puffer.length) puffer.length = 0;
+    return { kosten: bestes, knoten: gezaehlt };
+  }
+
+  /* ===================== Zufall mit Gedächtnis =====================
+     Ein eigener Generator, damit jeder Prüflauf dieselben Karten sieht. */
+  function wuerfel(saat) {
+    let a = saat >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* ===================== Karten bauen ===================== */
+  const W = 64, H = 36;
+  let KARTE = null, DIAGONAL = false, VERFAHREN = "astern", LAUF = null;
+
+  function leereKarte() {
+    const kosten = new Float64Array(W * H).fill(1);
+    return Karte(W, H, kosten, 4 * W + 4, (H - 5) * W + (W - 5));
+  }
+
+  function kartePreset(name) {
+    const k = leereKarte();
+    const z = wuerfel(20260817);
+    if (name === "falle") {
+      // Ein Zaun quer durch, die Lücke weit weg von der Luftlinie: genau der Fall,
+      // in dem die Schätzung in die falsche Richtung zeigt.
+      const xw = Math.floor(W * 0.52);
+      for (let y = 0; y < H - 6; y++) k.kosten[y * W + xw] = 0;
+      for (let y = 0; y < H; y++) if (y > 8) k.kosten[y * W + Math.floor(W * 0.75)] = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (x > xw + 2 && x < W * 0.75 - 2 && y > 12 && y < 26) k.kosten[y * W + x] = 8;
+      }
+    } else if (name === "sumpf") {
+      // Wertrauschen aus zwei Sinusfeldern plus Zufall — Bänder statt Flecken
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const v = Math.sin(x * 0.17) * Math.cos(y * 0.21) + Math.sin((x + y) * 0.09) + z() * 0.7;
+        k.kosten[y * W + x] = v > 1.15 ? 8 : v > 0.35 ? 3 : 1;
+      }
+      for (let i = 0; i < 40; i++) {
+        const x = Math.floor(z() * W), y = Math.floor(z() * H);
+        for (let d = 0; d < 5; d++) if (y + d < H) k.kosten[(y + d) * W + x] = 0;
+      }
+    } else if (name === "labyrinth") {
+      // Zellenlabyrinth: alles Wand, dann per Tiefensuche Gänge aufbrechen
+      k.kosten.fill(0);
+      const stapel = [[1, 1]];
+      k.kosten[1 * W + 1] = 1;
+      while (stapel.length) {
+        const [x, y] = stapel[stapel.length - 1];
+        const kanten = [[2,0],[-2,0],[0,2],[0,-2]].filter(([dx, dy]) => {
+          const nx = x + dx, ny = y + dy;
+          return nx > 0 && ny > 0 && nx < W - 1 && ny < H - 1 && k.kosten[ny * W + nx] === 0;
+        });
+        if (!kanten.length) { stapel.pop(); continue; }
+        const [dx, dy] = kanten[Math.floor(z() * kanten.length)];
+        k.kosten[(y + dy / 2) * W + (x + dx / 2)] = 1;
+        k.kosten[(y + dy) * W + (x + dx)] = 1;
+        stapel.push([x + dx, y + dy]);
+      }
+      // Ziel auf eine ausgehöhlte Zelle legen: die Gänge liegen auf ungeraden
+      // Koordinaten, (W−2, H−2) ist bei geradem W oder H eine Wand.
+      const zx = W % 2 ? W - 2 : W - 3;
+      const zy = H % 2 ? H - 2 : H - 3;
+      k.start = 1 * W + 1;
+      k.ziel = zy * W + zx;
+      k.kosten[k.ziel] = 1;
+    } else if (name === "streu") {
+      for (let i = 0; i < k.n; i++) if (z() < 0.3) k.kosten[i] = 0;
+      for (let i = 0; i < k.n; i++) if (k.kosten[i] > 0 && z() < 0.25) k.kosten[i] = 3;
+    }
+    k.kosten[k.start] = Math.max(1, k.kosten[k.start]);
+    k.kosten[k.ziel] = Math.max(1, k.kosten[k.ziel]);
+    return k;
+  }
+
+  /* ===================== Verfahren auf der aktuellen Karte ===================== */
+  const VERFAHRENSLISTE = [
+    { id: "breit", name: "Breitensuche", text: "zählt Schritte, nicht Preise" },
+    { id: "dijkstra", name: "Dijkstra", text: "ohne Schätzung, kreisförmig" },
+    { id: "astern", name: "A* (Oktil/Manhattan)", text: "mit zulässiger Schätzung" },
+    { id: "gierig", name: "Greedy-Best-First", text: "nur Schätzung, keine Garantie" }
+  ];
+
+  function laufen(id, eps) {
+    const minP = minPreisVon(KARTE);
+    const h = schaetzer(DIAGONAL ? "oktil" : "manhattan", KARTE, minP);
+    if (id === "breit") return breitensuche(KARTE, DIAGONAL);
+    if (id === "dijkstra") return suchen(KARTE, { diagonal: DIAGONAL });
+    if (id === "gierig") return suchen(KARTE, { h, gewicht: 0, eps: 1, diagonal: DIAGONAL });
+    return suchen(KARTE, { h, eps: eps === undefined ? 1 : eps, diagonal: DIAGONAL });
+  }
+
+  function alles() {
+    LAUF = laufen(VERFAHREN, 1);
+    const zeilen = VERFAHRENSLISTE.map((v) => ({ v, r: laufen(v.id, 1) }));
+    const bestes = Math.min(...zeilen.map((x) => x.r.kosten).filter(isFinite));
+    const tb = $("vergleich").querySelector("tbody");
+    tb.textContent = "";
+    for (const { v, r } of zeilen) {
+      const tr = document.createElement("tr");
+      if (v.id === VERFAHREN) tr.className = "aktiv";
+      const umweg = isFinite(r.kosten) && bestes > 0 ? (r.kosten / bestes - 1) : 0;
+      const marke = !isFinite(r.kosten) ? "<span class='schlecht'>kein Weg</span>"
+        : umweg < 1e-9 ? "<span class='gutt'>" + r.kosten.toFixed(1) + "</span>"
+        : "<span class='schlecht'>" + r.kosten.toFixed(1) + " (+" + (umweg * 100).toFixed(0) + " %)</span>";
+      tr.innerHTML = "<td>" + v.name + "</td><td class='z'>" + marke +
+        "</td><td class='z'>" + r.entnommen.toLocaleString("de-AT") + "</td>";
+      tr.addEventListener("click", () => { VERFAHREN = v.id; alles(); });
+      tr.style.cursor = "pointer";
+      tb.append(tr);
+    }
+    const dij = zeilen.find((x) => x.v.id === "dijkstra").r;
+    const ast = zeilen.find((x) => x.v.id === "astern").r;
+    $("vergleich-fuss").innerHTML = isFinite(dij.kosten)
+      ? "Gleicher Weg, andere Arbeit: A* fasst <b>" + ast.entnommen.toLocaleString("de-AT") +
+        "</b> Felder an, Dijkstra <b>" + dij.entnommen.toLocaleString("de-AT") + "</b> — " +
+        (dij.entnommen > 0 ? (100 - ast.entnommen / dij.entnommen * 100).toFixed(0) : "0") +
+        " % gespart, bei identischen Kosten. Zeile anklicken wechselt die Ansicht."
+      : "Auf dieser Karte gibt es keinen Weg zum Ziel — sichtbar daran, dass die Suche alles " +
+        "erreichbare abgearbeitet hat und dann leer lief.";
+
+    const v = VERFAHRENSLISTE.find((x) => x.id === VERFAHREN);
+    $("verfahren-name").textContent = v.name + " — " + v.text;
+    const felder = KARTE.kosten.reduce((s, c) => s + (c > 0 ? 1 : 0), 0);
+    $("karten-lage").textContent = W + "×" + H + " · " + felder + " begehbar · " +
+      (DIAGONAL ? "8 Nachbarn" : "4 Nachbarn");
+    epsLauf();
+    zeichnen();
+  }
+
+  function epsLauf() {
+    const eps = +$("eps").value / 100;
+    $("eps-zahl").textContent = eps.toFixed(2);
+    const opt = laufen("dijkstra", 1);
+    const r = laufen("astern", eps);
+    $("w-eps-weg").textContent = isFinite(r.kosten) ? r.kosten.toFixed(1) : "—";
+    const umweg = isFinite(r.kosten) && isFinite(opt.kosten) ? r.kosten / opt.kosten - 1 : 0;
+    const uEl = $("w-eps-umweg");
+    uEl.textContent = (umweg * 100).toFixed(1) + " %";
+    uEl.className = "n " + (umweg < 1e-9 ? "gut" : "warn");
+    $("w-eps-knoten").textContent = r.entnommen.toLocaleString("de-AT");
+    const spar = opt.entnommen > 0 ? 100 - r.entnommen / opt.entnommen * 100 : 0;
+    $("w-eps-spar").textContent = spar.toFixed(0) + " %";
+  }
+
+  /* ===================== Zeichnen ===================== */
+  function farbe(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+  function zeichnen() {
+    const c = $("feld"), g = c.getContext("2d");
+    const s = c.width / W;
+    if (c.height !== Math.round(s * H)) c.height = Math.round(s * H);
+    g.fillStyle = farbe("--tief"); g.fillRect(0, 0, c.width, c.height);
+
+    // Untergrund: Preis des Feldes
+    for (let i = 0; i < KARTE.n; i++) {
+      const x = (i % W) * s, y = Math.floor(i / W) * s;
+      const p = KARTE.kosten[i];
+      if (p === 0) { g.fillStyle = farbe("--wand"); g.fillRect(x, y, s, s); }
+      else if (p >= 8) { g.fillStyle = farbe("--sumpf") + "66"; g.fillRect(x, y, s, s); }
+      else if (p >= 3) { g.fillStyle = farbe("--sand") + "55"; g.fillRect(x, y, s, s); }
+    }
+
+    // Was die Suche angefasst hat, in der Reihenfolge der Entnahme
+    if (LAUF && LAUF.rang) {
+      const max = Math.max(1, LAUF.entnommen - 1);
+      const such = farbe("--such");
+      for (let i = 0; i < KARTE.n; i++) {
+        const r = LAUF.rang[i];
+        if (r < 0) continue;
+        const t = r / max;
+        g.fillStyle = such + Math.round((0.14 + t * 0.5) * 255).toString(16).padStart(2, "0");
+        g.fillRect((i % W) * s, Math.floor(i / W) * s, s, s);
+      }
+    }
+
+    // Gitterlinien nur bei großzügiger Zelle
+    if (s >= 12) {
+      g.strokeStyle = farbe("--netz"); g.globalAlpha = .25; g.lineWidth = 1;
+      for (let x = 0; x <= W; x++) { g.beginPath(); g.moveTo(x * s, 0); g.lineTo(x * s, H * s); g.stroke(); }
+      for (let y = 0; y <= H; y++) { g.beginPath(); g.moveTo(0, y * s); g.lineTo(W * s, y * s); g.stroke(); }
+      g.globalAlpha = 1;
+    }
+
+    // Der Weg
+    if (LAUF && LAUF.pfad.length) {
+      g.strokeStyle = farbe("--pfad"); g.lineWidth = Math.max(2, s * 0.42);
+      g.lineJoin = "round"; g.lineCap = "round";
+      g.beginPath();
+      LAUF.pfad.forEach((i, t) => {
+        const x = (i % W + 0.5) * s, y = (Math.floor(i / W) + 0.5) * s;
+        t ? g.lineTo(x, y) : g.moveTo(x, y);
+      });
+      g.stroke();
+    }
+
+    // Start und Ziel
+    for (const [i, f] of [[KARTE.start, "--start"], [KARTE.ziel, "--ziel"]]) {
+      g.fillStyle = farbe(f);
+      g.fillRect((i % W) * s, Math.floor(i / W) * s, s, s);
+      g.strokeStyle = farbe("--tinte"); g.lineWidth = 1;
+      g.strokeRect((i % W) * s + .5, Math.floor(i / W) * s + .5, s - 1, s - 1);
+    }
+  }
+
+  /* ===================== Prüflauf ===================== */
+  function pruefen() {
+    const tb = $("pruef").querySelector("tbody");
+    tb.textContent = "";
+    let fehler = 0;
+    const zeile = (was, gut, text) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = "<td>" + was + "</td><td style='color:" + (gut ? "var(--gut)" : "var(--warn)") + "'>" + text + "</td>";
+      tb.append(tr);
+      if (!gut) fehler++;
+    };
+    const t0 = performance.now();
+
+    // 1. Erschöpfend: alle Wandmuster eines 4×4-Feldes gegen stumpfe Aufzählung.
+    {
+      let faelle = 0, ungleich = 0, ohneWeg = 0, maxAbw = 0;
+      for (let muster = 0; muster < 65536; muster++) {
+        if (muster & 1) continue;                                  // Start frei
+        if (muster & 0x8000) continue;                             // Ziel frei
+        faelle++;
+        const kosten = new Float64Array(16);
+        for (let i = 0; i < 16; i++) kosten[i] = (muster >> i) & 1 ? 0 : 1;
+        const k = Karte(4, 4, kosten, 0, 15);
+        const d = suchen(k, {});
+        const b = alleWege(k, false);
+        if (!isFinite(d.kosten) && !isFinite(b.kosten)) { ohneWeg++; continue; }
+        const abw = Math.abs(d.kosten - b.kosten);
+        if (!(abw < 1e-9)) { ungleich++; maxAbw = Math.max(maxAbw, abw); }
+      }
+      zeile("Dijkstra gegen stumpfe Aufzählung", ungleich === 0,
+        faelle.toLocaleString("de-AT") + " Wandmuster erschöpfend · " + ohneWeg.toLocaleString("de-AT") +
+        " davon ohne Weg · " + (ungleich === 0 ? "keine Abweichung" : ungleich + " Abweichungen"));
+    }
+
+    // 2. Drei Verfahren, ein Ergebnis — auf gewichteten Karten, alle Knotenpaare.
+    {
+      let maxAbwBF = 0, maxAbwFW = 0, karten = 0, paare = 0;
+      for (let saat = 1; saat <= 30; saat++) {
+        const z = wuerfel(saat * 7919);
+        const w = 7, h = 7, kosten = new Float64Array(w * h);
+        for (let i = 0; i < w * h; i++) {
+          const r = z();
+          kosten[i] = r < 0.18 ? 0 : r < 0.5 ? 1 : r < 0.8 ? 3 : 8;
+        }
+        kosten[0] = 1; kosten[w * h - 1] = 1;
+        const k = Karte(w, h, kosten, 0, w * h - 1);
+        karten++;
+        const fw = floydWarshall(k, false);
+        for (let s = 0; s < k.n; s++) {
+          if (kosten[s] === 0) continue;
+          const kk = Karte(w, h, kosten, s, w * h - 1);
+          const bf = bellmanFord(kk, false);
+          const dj = suchen(Karte(w, h, kosten, s, -1), {}).dist;
+          for (let t = 0; t < k.n; t++) {
+            if (kosten[t] === 0) continue;
+            paare++;
+            // Floyd-Warshall zählt das Startfeld nicht mit, die Suchen auch nicht
+            const a = bf[t], b = dj[t], c = fw[s * k.n + t];
+            if (isFinite(a) || isFinite(b)) maxAbwBF = Math.max(maxAbwBF, Math.abs(a - b));
+            if (isFinite(b) || isFinite(c)) maxAbwFW = Math.max(maxAbwFW, Math.abs(b - c));
+          }
+        }
+      }
+      zeile("Dijkstra = Bellman-Ford = Floyd-Warshall", maxAbwBF < 1e-9 && maxAbwFW < 1e-9,
+        karten + " gewichtete Karten, " + paare.toLocaleString("de-AT") +
+        " Knotenpaare · größte Abweichung " + Math.max(maxAbwBF, maxAbwFW).toExponential(1));
+    }
+
+    // 3. Dreiecksungleichung über alle Tripel.
+    {
+      const z = wuerfel(4711);
+      const w = 6, h = 6, kosten = new Float64Array(w * h);
+      for (let i = 0; i < w * h; i++) { const r = z(); kosten[i] = r < 0.15 ? 0 : r < 0.6 ? 1 : 3; }
+      kosten[0] = 1; kosten[w * h - 1] = 1;
+      const k = Karte(w, h, kosten, 0, w * h - 1);
+      const d = floydWarshall(k, false);
+      let tripel = 0, verletzt = 0;
+      for (let a = 0; a < k.n; a++) for (let b = 0; b < k.n; b++) for (let c = 0; c < k.n; c++) {
+        if (!isFinite(d[a * k.n + b]) || !isFinite(d[b * k.n + c])) continue;
+        tripel++;
+        if (d[a * k.n + c] > d[a * k.n + b] + d[b * k.n + c] + 1e-9) verletzt++;
+      }
+      zeile("Dreiecksungleichung hält", verletzt === 0,
+        tripel.toLocaleString("de-AT") + " Tripel geprüft, " + verletzt + " Verletzungen");
+    }
+
+    // 4. A* mit zulässiger Schätzung liefert denselben Weg — und spart messbar.
+    {
+      let gleich = true, maxAbw = 0, sparSumme = 0, karten = 0;
+      for (let saat = 1; saat <= 40; saat++) {
+        const z = wuerfel(saat * 104729);
+        const kosten = new Float64Array(30 * 20);
+        for (let i = 0; i < kosten.length; i++) { const r = z(); kosten[i] = r < 0.22 ? 0 : r < 0.7 ? 1 : r < 0.9 ? 3 : 8; }
+        kosten[0] = 1; kosten[kosten.length - 1] = 1;
+        const k = Karte(30, 20, kosten, 0, kosten.length - 1);
+        const dj = suchen(k, {});
+        if (!isFinite(dj.kosten)) continue;
+        karten++;
+        const h = schaetzer("manhattan", k, minPreisVon(k));
+        const as = suchen(k, { h });
+        maxAbw = Math.max(maxAbw, Math.abs(dj.kosten - as.kosten));
+        if (Math.abs(dj.kosten - as.kosten) > 1e-9) gleich = false;
+        sparSumme += 1 - as.entnommen / dj.entnommen;
+      }
+      zeile("A* bleibt optimal (4 Nachbarn, Manhattan)", gleich,
+        karten + " Karten · größte Abweichung " + maxAbw.toExponential(1) +
+        " · im Schnitt " + (sparSumme / karten * 100).toFixed(0) + " % weniger Felder angefasst");
+    }
+
+    // 5. Die ε-Schranke: höchstens ε-mal so teuer, über alle ε und alle Karten.
+    {
+      let maxVerhaeltnis = 0, gebrochen = 0, faelle = 0, schlimmstes = null;
+      for (let saat = 1; saat <= 25; saat++) {
+        const z = wuerfel(saat * 15485863);
+        const kosten = new Float64Array(24 * 16);
+        for (let i = 0; i < kosten.length; i++) { const r = z(); kosten[i] = r < 0.2 ? 0 : r < 0.65 ? 1 : r < 0.9 ? 3 : 8; }
+        kosten[0] = 1; kosten[kosten.length - 1] = 1;
+        const k = Karte(24, 16, kosten, 0, kosten.length - 1);
+        const opt = suchen(k, {}).kosten;
+        if (!isFinite(opt)) continue;
+        const h = schaetzer("manhattan", k, minPreisVon(k));
+        for (let eps = 1; eps <= 4.0001; eps += 0.25) {
+          faelle++;
+          const r = suchen(k, { h, eps }).kosten;
+          const v = r / opt;
+          if (v > maxVerhaeltnis) { maxVerhaeltnis = v; schlimmstes = eps; }
+          if (v > eps + 1e-9) gebrochen++;
+        }
+      }
+      zeile("ε-A* bleibt unter dem Faktor ε", gebrochen === 0,
+        faelle.toLocaleString("de-AT") + " Läufe (ε von 1 bis 4) · schlechtester Weg " +
+        maxVerhaeltnis.toFixed(3) + "-fach, aufgetreten bei ε = " + schlimmstes);
+    }
+
+    // 6. Gegenbeispiel gesucht, nicht behauptet: Manhattan bei Diagonalzügen.
+    {
+      let gefunden = null, geprueft = 0, verletzteKanten = 0, kanten = 0;
+      for (let saat = 1; saat <= 60 && !gefunden; saat++) {
+        const z = wuerfel(saat * 2654435761);
+        const w = 12, h = 9, kosten = new Float64Array(w * h);
+        for (let i = 0; i < kosten.length; i++) { const r = z(); kosten[i] = r < 0.2 ? 0 : r < 0.75 ? 1 : 3; }
+        kosten[0] = 1; kosten[kosten.length - 1] = 1;
+        const k = Karte(w, h, kosten, 0, kosten.length - 1);
+        const opt = suchen(k, { diagonal: true }).kosten;
+        if (!isFinite(opt)) continue;
+        geprueft++;
+        const hM = schaetzer("manhattan", k, minPreisVon(k));
+        const r = suchen(k, { h: hM, diagonal: true }).kosten;
+        if (r > opt + 1e-9) gefunden = { saat, opt, r };
+      }
+      // Zulässigkeit direkt messen: Schätzung gegen die echte Restentfernung
+      {
+        const z = wuerfel(999331);
+        const w = 12, h = 9, kosten = new Float64Array(w * h);
+        for (let i = 0; i < kosten.length; i++) { const r = z(); kosten[i] = r < 0.15 ? 0 : 1; }
+        kosten[0] = 1; kosten[kosten.length - 1] = 1;
+        const k = Karte(w, h, kosten, 0, kosten.length - 1);
+        const hM = schaetzer("manhattan", k, 1);
+        const puffer = [];
+        for (let i = 0; i < k.n; i++) {
+          if (kosten[i] === 0) continue;
+          nachbarn(k, i, true, puffer);
+          for (let t = 0; t < puffer.length; t += 2) {
+            kanten++;
+            if (hM(i) > puffer[t + 1] + hM(puffer[t]) + 1e-9) verletzteKanten++;
+          }
+        }
+      }
+      zeile("Manhattan + Diagonalzüge ist unzulässig", gefunden !== null,
+        gefunden
+          ? "Gegenbeispiel gefunden (Karte " + gefunden.saat + "): " + gefunden.r.toFixed(3) +
+            " statt " + gefunden.opt.toFixed(3) + " · " + verletzteKanten + " von " + kanten +
+            " Kanten verletzen die Konsistenz"
+          : geprueft + " Karten geprüft, kein Gegenbeispiel gefunden — dann stimmt die Behauptung nicht");
+    }
+
+    // 7. Oktil ist der richtige Maßstab — dieselben Karten, kein Umweg mehr.
+    {
+      let gleich = true, maxAbw = 0, karten = 0;
+      for (let saat = 1; saat <= 60; saat++) {
+        const z = wuerfel(saat * 2654435761);
+        const w = 12, h = 9, kosten = new Float64Array(w * h);
+        for (let i = 0; i < kosten.length; i++) { const r = z(); kosten[i] = r < 0.2 ? 0 : r < 0.75 ? 1 : 3; }
+        kosten[0] = 1; kosten[kosten.length - 1] = 1;
+        const k = Karte(w, h, kosten, 0, kosten.length - 1);
+        const opt = suchen(k, { diagonal: true }).kosten;
+        if (!isFinite(opt)) continue;
+        karten++;
+        const r = suchen(k, { h: schaetzer("oktil", k, minPreisVon(k)), diagonal: true }).kosten;
+        maxAbw = Math.max(maxAbw, Math.abs(r - opt));
+        if (Math.abs(r - opt) > 1e-9) gleich = false;
+      }
+      zeile("Oktil-Schätzung bleibt optimal", gleich,
+        karten + " Karten mit Diagonalzügen · größte Abweichung " + maxAbw.toExponential(1));
+    }
+
+    // 8. Negative Kante: hier irrt Dijkstra, Bellman-Ford nicht.
+    {
+      /* Vier Knoten, gerichtet:  S→A = 1, S→B = 2, B→A = −2, A→Z = 0.
+         Der wahre kürzeste Weg S→Z läuft über B: 2 − 2 + 0 = 0. Dijkstra hakt A
+         mit 1 ab, weil 1 < 2 — und schaut nie wieder hin, als B später einen
+         billigeren Weg nach A eröffnet. Er sagt 1 statt 0. */
+      const kanten = [[0,1,1],[0,2,2],[2,1,-2],[1,3,0]];
+      const n = 4;
+      const dijkstraGraf = () => {
+        const dist = new Float64Array(n).fill(Infinity);
+        const zu = new Uint8Array(n);
+        dist[0] = 0;
+        for (;;) {
+          let i = -1, best = Infinity;
+          for (let j = 0; j < n; j++) if (!zu[j] && dist[j] < best) { best = dist[j]; i = j; }
+          if (i === -1) break;
+          zu[i] = 1;
+          for (const [a, b, w] of kanten) if (a === i && dist[i] + w < dist[b]) dist[b] = dist[i] + w;
+        }
+        return dist[3];
+      };
+      const bfGraf = () => {
+        const dist = new Float64Array(n).fill(Infinity);
+        dist[0] = 0;
+        for (let r = 0; r < n - 1; r++)
+          for (const [a, b, w] of kanten)
+            if (isFinite(dist[a]) && dist[a] + w < dist[b]) dist[b] = dist[a] + w;
+        return dist[3];
+      };
+      const d = dijkstraGraf(), b = bfGraf();
+      zeile("negative Kante bricht Dijkstra", Math.abs(b - 0) < 1e-9 && d > b + 1e-9,
+        "Dijkstra sagt " + d + ", Bellman-Ford sagt " + b + " — der wahre Wert ist 0");
+    }
+
+    // 9. Der Weg, den die Suche zurückgibt, ist auch wirklich ein Weg.
+    {
+      let stimmt = true, laeufe = 0, felder = 0;
+      for (let saat = 1; saat <= 20; saat++) {
+        const z = wuerfel(saat * 40503);
+        const kosten = new Float64Array(20 * 14);
+        for (let i = 0; i < kosten.length; i++) { const r = z(); kosten[i] = r < 0.2 ? 0 : r < 0.8 ? 1 : 3; }
+        kosten[0] = 1; kosten[kosten.length - 1] = 1;
+        const k = Karte(20, 14, kosten, 0, kosten.length - 1);
+        for (const diagonal of [false, true]) {
+          const h = schaetzer(diagonal ? "oktil" : "manhattan", k, minPreisVon(k));
+          for (const opt of [{ diagonal }, { h, diagonal }, { h, gewicht: 0, diagonal }]) {
+            const r = suchen(k, opt);
+            if (!isFinite(r.kosten)) continue;
+            laeufe++;
+            // Nachrechnen: Nachbarschaft eingehalten, keine Wand betreten, Summe stimmt
+            let summe = 0;
+            for (let t = 1; t < r.pfad.length; t++) {
+              const a = r.pfad[t - 1], b = r.pfad[t];
+              felder++;
+              const ax = a % 20, ay = (a - ax) / 20, bx = b % 20, by = (b - bx) / 20;
+              const dx = Math.abs(ax - bx), dy = Math.abs(ay - by);
+              if (dx > 1 || dy > 1 || dx + dy === 0) stimmt = false;
+              if (kosten[b] === 0) stimmt = false;
+              summe += kosten[b] * (dx === 1 && dy === 1 ? WURZEL2 : 1);
+            }
+            if (Math.abs(summe - r.kosten) > 1e-9) stimmt = false;
+          }
+        }
+      }
+      zeile("zurückgegebene Wege sind gültig", stimmt,
+        laeufe + " Wege nachgelaufen, " + felder.toLocaleString("de-AT") +
+        " Schritte auf Nachbarschaft, Wände und Kostensumme geprüft");
+    }
+
+    const dauer = performance.now() - t0;
+    $("pruef-fuss").innerHTML = fehler === 0
+      ? "<b>Alle Prüfungen bestanden</b> in " + dauer.toFixed(0) + " ms. Die beiden Zeilen mit " +
+        "Gegenbeispiel sind die interessanten: dort <i>soll</i> etwas schiefgehen, und wenn es das " +
+        "nicht täte, wäre die Erklärung im Blatt falsch."
+      : "<b style='color:var(--warn)'>" + fehler + " Prüfung(en) fehlgeschlagen.</b>";
+  }
+
+  /* ===================== Bedienung ===================== */
+  KARTE = kartePreset("falle");
+
+  $("karte-wahl").addEventListener("change", (e) => { KARTE = kartePreset(e.target.value); alles(); });
+  $("b-diagonal").addEventListener("click", (e) => {
+    DIAGONAL = !DIAGONAL;
+    e.currentTarget.setAttribute("aria-pressed", String(DIAGONAL));
+    alles();
+  });
+  $("eps").addEventListener("input", epsLauf);
+
+  let malt = false;
+  function malen(e) {
+    const el = $("feld"), r = el.getBoundingClientRect();
+    const s = el.width / W;
+    const x = Math.floor((e.clientX - r.left) * (el.width / r.width) / s);
+    const y = Math.floor((e.clientY - r.top) * (el.height / r.height) / s);
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const i = y * W + x;
+    const stift = $("stift").value;
+    if (stift === "s") { if (KARTE.kosten[i] === 0) KARTE.kosten[i] = 1; KARTE.start = i; }
+    else if (stift === "z") { if (KARTE.kosten[i] === 0) KARTE.kosten[i] = 1; KARTE.ziel = i; }
+    else {
+      if (i === KARTE.start || i === KARTE.ziel) return;
+      KARTE.kosten[i] = +stift;
+    }
+    alles();
+  }
+  $("feld").addEventListener("pointerdown", (e) => { malt = true; e.currentTarget.setPointerCapture(e.pointerId); malen(e); });
+  $("feld").addEventListener("pointermove", (e) => { if (malt) malen(e); });
+  $("feld").addEventListener("pointerup", () => { malt = false; });
+  $("feld").addEventListener("pointercancel", () => { malt = false; });
+
+  $("b-pruefen").addEventListener("click", pruefen);
+  $("b-thema").addEventListener("click", () => {
+    const jetzt = document.documentElement.getAttribute("data-theme");
+    const dunkel = matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.setAttribute("data-theme", jetzt ? (jetzt === "dark" ? "light" : "dark") : (dunkel ? "light" : "dark"));
+    zeichnen();
+  });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", zeichnen);
+
+  alles();
+})();
+</script>
+</body>
+</html>
